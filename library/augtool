@@ -31,6 +31,13 @@ options:
       - Either a list of augtool commands, or else a newline-separated
         list of commands
     required: true
+  autoload:
+    description:
+      - Should augtool load lenses by default or it will be provided
+        as one of commands (or it will fail misserably :) )
+    required: false
+    choices: [yes, no]
+    default: yes
   backup:
     description:
       - Whether or not to make a backup of the files changed (passes
@@ -55,6 +62,19 @@ args:
     defvar vsftpd /files/etc/vsftpd/vsftpd.conf
     set \$vsftpd/xferlog_std_format NO
     set \$vsftpd/log_ftp_protocol YES
+
+# do backup, and do not autoload all lenses just specific for dovecot
+# this will speed up augtool tenfold
+action: augtool
+args:
+  backup: true
+  autoload: false
+  commands: |
+    set /augeas/load/Dovecot/lens Dovecot.lns
+    set /augeas/load/Dovecot/incl /etc/dovecot/conf.d/10-master.conf
+    load
+    rm /files/etc/dovecot/conf.d/10-master.conf/service[8]/
+    save
 
 # Or provide the commands as a list.
 action: augtool
@@ -84,7 +104,8 @@ def main():
     module = AnsibleModule(
         argument_spec=dict(
             commands=dict(required=True),
-            backup=dict(choices=BOOLEANS, default=True)
+            backup=dict(type='bool', default=True),
+            autoload=dict(type='bool', default=True)
             ),
         supports_check_mode=True,
         )
@@ -94,10 +115,13 @@ def main():
     if isinstance(commands, list):
         commands = "\n".join(commands)
     backup = module.boolean(params["backup"])
+    autoload = module.boolean(params["autoload"])
 
     cmd = ["augtool"]
     if backup:
         cmd.append("--backup")
+    if not autoload:
+        cmd.append("--noautoload")
     if module.check_mode:
         commands += "\nset /augeas/save noop"
     commands += "\nsave\nprint /augeas//error\n"
